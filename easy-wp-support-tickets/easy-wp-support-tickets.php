@@ -89,9 +89,55 @@ class EWST25 {
         echo '<h2>Easy WP Support Tickets</h2>';
         if( count($tickets) ){
             
-            echo '<table><tr><th>ID</th><th>User</th><th>Subject</th><th>Status</th></tr>';
+            $css = "
+                <style>
+                    #ewst-ticket-list{
+                        width: 80%;
+                        
+                    }
+                    
+                    #ewst-ticket-list tr{
+                        border: 1px solid blue;
+                    }
+                    
+                    #ewst-ticket-list th{
+                        background: rgba(0,0,0,0.3);
+                        color: #fff;
+                        padding: 10px;
+                    }
+                    
+                    #ewst-ticket-list td{
+                        
+                        padding: 10px;
+                        text-align: center;
+                    }
+                </style>
+            ";
+            
+            echo $css;
+            
+            echo '
+                    <table id="ewst-ticket-list" >
+                        <tr>
+                            <th>ID</th>
+                            <th>User</th>
+                            <th>Subject</th>
+                            <th>Status</th>
+                            <th>View</th>
+                        </tr>
+                    ';
+                    
             foreach ($tickets as $ticket) {
-                echo "<tr><td>{$ticket->id}</td><td>{$ticket->wp_user_id}</td><td><a href='?page=ticket_list&ticket={$ticket->id}'>{$ticket->subject}</a></td><td>{$ticket->status}</td></tr>";
+                echo "
+                    <tr>
+                        <td>{$ticket->id}</td>
+                        <td>{$ticket->wp_user_id}</td>
+                        <td>$ticket->subject</td>
+                        <td>$ticket->status</td>
+                        <td>
+                            <a href='?page=ticket_list&ticket={$ticket->id}'>View</a>
+                        </td>
+                    </tr>";
             }
             echo '</table>';
             
