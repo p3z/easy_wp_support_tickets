@@ -2,7 +2,7 @@
 /**
  * Plugin Name:Easy Wp Support Tickets
  * Description: A simple support ticket system for WordPress.
- * Version: 1.7
+ * Version: 1.9
  * Author: Shay Pottle
  */
 
@@ -10,27 +10,56 @@
 
 if (!defined('ABSPATH')) exit;
 
+class UserTicketModel{
+    
+    public static function get_all_tickets(){
+        
+        global $wpdb;
+        $tickets = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}ewst25_user_tickets ORDER BY created_at DESC");
+        $tickets = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ewst25_user_tickets ORDER BY created_at DESC"));
+
+        return $tickets;
+        
+    }// end fn
+    
+    public static function get_tickets_by_user( $user_id ){
+        
+        global $wpdb;
+        
+        $tickets = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ewst25_user_tickets WHERE wp_user_id = %d", $user_id));
+        
+        return $tickets;
+        
+    }// end fn
+    
+}// end class
 
 // plugin prefix: ewst25
 
-class EWST25 {
+class EwstSetup{
     
-    public function __construct() {
-        register_activation_hook(__FILE__, [$this, 'install_db_tables']);
-        register_deactivation_hook(__FILE__, [$this, 'uninstall_ewst_tables']); // Add deactivation hook
-
-        add_action('admin_menu', [$this, 'init_admin_menu']);
-        add_shortcode('ewst_ticket_form', [$this, 'frontend_view']);
-        add_action('init', [$this, 'handle_form_submission']);
-    }// end constructor
+    public static function init_plugin(){
+        
+        register_activation_hook(__FILE__, ['EwstSetup', 'install_db_tables']);
+        //register_deactivation_hook(__FILE__, ['EwstSetup', 'uninstall_db_tables']);
+        register_uninstall_hook(__FILE__, ['EwstSetup', 'uninstall_db_tables']);
+        
+        add_action('admin_menu', ['EwstSetup', 'init_admin_menu']);
+        add_shortcode('ewst_ticket_form', ['EwstViews', 'load_frontend_view']);
+        add_action('init', ['EwstSetup', 'handle_form_submission']);
+        
+    }// end fn
     
-    public function install_db_tables(){
+    
+    public static function install_db_tables(){
         
         global $wpdb;
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         
         // Force collation to match existing tables
         $charset_collate = "DEFAULT CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci";
+        //$charset_collate = $wpdb->get_charset_collate();
+
         $user_tickets = $wpdb->prefix . 'ewst25_user_tickets';
         $ticket_responses = $wpdb->prefix . 'ewst25_ticket_responses';
     
@@ -59,7 +88,7 @@ class EWST25 {
         
     }// end fn
     
-    public function uninstall_ewst_tables() {
+    public static function uninstall_db_tables() {
         global $wpdb;
         $table_tickets = $wpdb->prefix . 'ewst25_user_tickets';
         $table_responses = $wpdb->prefix . 'ewst25_ticket_responses';
@@ -68,23 +97,60 @@ class EWST25 {
         $wpdb->query("DROP TABLE IF EXISTS $table_tickets");
     }// end fn
     
-    public function init_admin_menu() {
+    public static function init_admin_menu() {
         
         add_menu_page(
-            'Easy WP Support Tickets',
-            'Easy WP Support Tickets',
-            'manage_options',
-            'ticket_list',
-            [$this, 'admin_ticket_list'],
-            'dashicons-tickets-alt'
+            'Easy WP Support Tickets', // page_title
+            'Easy WP Support Tickets', // menu_title
+            'manage_options', // capability
+            'ticket_list', // menu_slug
+            ['EwstAdminViews', 'load_admin_ticket_list'], // callback 
+            'dashicons-tickets-alt' // icon_url 
         );
         
     }// end fn
-
-    public function admin_ticket_list() {
+    
+    public static function handle_form_submission() {
+        
+        if (!isset($_POST['action']) || !is_user_logged_in()) return;
         
         global $wpdb;
-        $tickets = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}ewst25_user_tickets ORDER BY created_at DESC");
+        $user_id = get_current_user_id();
+        
+        switch( $_POST['action'] ){
+            
+            case 'create_ticket':
+                $wpdb->insert("{$wpdb->prefix}ewst25_user_tickets", [
+                    'wp_user_id' => $user_id,
+                    'subject' => sanitize_text_field($_POST['subject']),
+                    'status' => 'open'
+                ]);
+                
+                $ticket_id = $wpdb->insert_id;
+                
+                $wpdb->insert("{$wpdb->prefix}ewst25_ticket_responses", [
+                    'wp_user_id' => $user_id,
+                    'ticket_id' => $ticket_id,
+                    'message' => sanitize_textarea_field($_POST['message'])
+                ]);
+                break;
+                
+            default:
+                // Be careful, this currently will trigger for every post form submission!
+                //echo "Bruh";
+            
+        }// end switch
+        
+    }// end fn
+    
+}// end class
+
+class EwstAdminViews{
+    
+    public static function load_admin_ticket_list() {
+        
+        global $wpdb;
+        $tickets = UserTicketModel::get_all_tickets();
         
         echo '<h2>Easy WP Support Tickets</h2>';
         if( count($tickets) ){
@@ -149,18 +215,32 @@ class EWST25 {
 
     }// end fn
 
-    public function frontend_view() {
+}// end class
+
+class EwstViews{
+    
+    public static function load_frontend_view() {
+        
+        echo "<h1>Load frontend view</h1>";
+        
         ob_start();
         if (!is_user_logged_in()) {
             echo '<p>You must be logged in to create or view tickets.</p>';
             return ob_get_clean();
         }
-        $this->ticket_form();
-        $this->ticket_list();
+        
+        EwstViews::load_ticket_form();
+        
+        $user_tickets = UserTicketModel::get_tickets_by_user( get_current_user_id() );
+        EwstViews::load_ticket_list( $user_tickets );
+        
+        
         return ob_get_clean();
+        
     }// end fn
-
-    public function ticket_form() {
+    
+    public static function load_ticket_form() {
+        
         echo '<h2>Create a Ticket</h2>
             <form method="post">
                 <input type="text" name="subject" placeholder="Subject" required>
@@ -168,40 +248,20 @@ class EWST25 {
                 <input type="hidden" name="action" value="create_ticket">
                 <button type="submit">Submit</button>
             </form>';
+            
     }// end fn
 
-    public function ticket_list() {
-        
-        global $wpdb;
-        $user_id = get_current_user_id();
-        $tickets = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ewst25_user_tickets WHERE wp_user_id = %d", $user_id));
+    public static function load_ticket_list( $user_tickets ) {
         
         echo '<h2>Your Tickets</h2>';
-        foreach ($tickets as $ticket) {
+        foreach ($user_tickets as $ticket) {
             echo "<p><strong>{$ticket->subject}</strong> ({$ticket->status}) - <a href='?ticket={$ticket->id}'>View</a></p>";
         }
-    }// end fn
-
-    public function handle_form_submission() {
-        if (!isset($_POST['action']) || !is_user_logged_in()) return;
-        global $wpdb;
-        $user_id = get_current_user_id();
-
-        if ($_POST['action'] == 'create_ticket') {
-            $wpdb->insert("{$wpdb->prefix}ewst25_user_tickets", [
-                'wp_user_id' => $user_id,
-                'subject' => sanitize_text_field($_POST['subject']),
-                'status' => 'open'
-            ]);
-            $ticket_id = $wpdb->insert_id;
-            $wpdb->insert("{$wpdb->prefix}ewst25_ticket_responses", [
-                'wp_user_id' => $user_id,
-                'ticket_id' => $ticket_id,
-                'message' => sanitize_textarea_field($_POST['message'])
-            ]);
-        }
+        
     }// end fn
     
 }// end class
 
-new EWST25();
+
+EwstSetup::init_plugin();
+// add_action('plugins_loaded', ['EwstSetup', 'init_plugin']);
