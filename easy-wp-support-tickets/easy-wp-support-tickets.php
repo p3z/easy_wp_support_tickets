@@ -2,13 +2,42 @@
 /**
  * Plugin Name:Easy Wp Support Tickets
  * Description: A simple support ticket system for WordPress.
- * Version: 1.9
+ * Version: 1.10
  * Author: Shay Pottle
  */
 
 
 
 if (!defined('ABSPATH')) exit;
+
+require_once plugin_dir_path(__FILE__) . 'constants.php';
+
+
+function ewst_enqueue_global_styles() {
+    wp_enqueue_style(
+        'ewst-global-style', // handle
+        plugin_dir_url(__FILE__) . 'assets/css/global.css',
+        [], // dependencies
+        '1.0.0' // version
+    );
+}
+add_action('wp_enqueue_scripts', 'ewst_enqueue_global_styles');
+add_action('admin_enqueue_scripts', 'ewst_enqueue_global_styles');
+
+// function ewst_enqueue_admin_styles($hook) {
+    
+    
+//     if ($hook !== 'toplevel_page_ticket_list') return; // Load only on ticket_list page
+
+//     wp_enqueue_style(
+//         'ewst-admin-style',
+//         plugin_dir_url(__FILE__) . 'assets/css/admin.css',
+//         [],
+//         '1.0.0'
+//     );
+// }
+// add_action('admin_enqueue_scripts', 'ewst_enqueue_admin_styles');
+
 
 class UserTicketModel{
     
@@ -45,7 +74,8 @@ class EwstSetup{
         register_uninstall_hook(__FILE__, ['EwstSetup', 'uninstall_db_tables']);
         
         add_action('admin_menu', ['EwstSetup', 'init_admin_menu']);
-        add_shortcode('ewst_ticket_form', ['EwstViews', 'load_frontend_view']);
+        add_shortcode('ewst_create_ticket_form', ['EwstLoadViews', 'create_ticket_form']);
+        add_shortcode('ewst_view_ticket_list', ['EwstLoadViews', 'view_ticket_list']);
         add_action('init', ['EwstSetup', 'handle_form_submission']);
         
     }// end fn
@@ -153,37 +183,11 @@ class EwstAdminViews{
         $tickets = UserTicketModel::get_all_tickets();
         
         echo '<h2>Easy WP Support Tickets</h2>';
+        
         if( count($tickets) ){
             
-            $css = "
-                <style>
-                    #ewst-ticket-list{
-                        width: 80%;
-                        
-                    }
-                    
-                    #ewst-ticket-list tr{
-                        border: 1px solid blue;
-                    }
-                    
-                    #ewst-ticket-list th{
-                        background: rgba(0,0,0,0.3);
-                        color: #fff;
-                        padding: 10px;
-                    }
-                    
-                    #ewst-ticket-list td{
-                        
-                        padding: 10px;
-                        text-align: center;
-                    }
-                </style>
-            ";
-            
-            echo $css;
-            
             echo '
-                    <table id="ewst-ticket-list" >
+                    <table class="ewst-ticket-list" >
                         <tr>
                             <th>ID</th>
                             <th>User</th>
@@ -217,43 +221,82 @@ class EwstAdminViews{
 
 }// end class
 
-class EwstViews{
+class EwstLoadViews{
     
-    public static function load_frontend_view() {
-        
-        echo "<h1>Load frontend view</h1>";
+    public static function create_ticket_form() {
         
         ob_start();
+        
         if (!is_user_logged_in()) {
             echo '<p>You must be logged in to create or view tickets.</p>';
             return ob_get_clean();
         }
         
-        EwstViews::load_ticket_form();
+        $attribution_tag = VALID_EWST_LICENSE ? "" : "<span class='ewst-attribution'>Powered by Easy WP Support Tickets</span>";
         
-        $user_tickets = UserTicketModel::get_tickets_by_user( get_current_user_id() );
-        EwstViews::load_ticket_list( $user_tickets );
         
+        echo "
+            <form class='ewst-create-ticket-form' method='post'>
+            
+                <label for='ewst-ticket-subject'>
+                    Ticket subject:
+                </label>
+                <input id='ewst-ticket-subject' class='ewst-text-input' type='text' name='subject' required>
+                
+                <label for='ewst-ticket-message'>
+                    Message:
+                </label>
+                <textarea id='ewst-ticket-message' class='ewst-textarea' name='message' required></textarea>
+                <input type='hidden' name='action' value='create_ticket'>
+                <button class='ewst-submit-btn' type='submit'>Submit</button>
+                
+                $attribution_tag
+                
+            </form>
+        ";
         
         return ob_get_clean();
-        
-    }// end fn
-    
-    public static function load_ticket_form() {
-        
-        echo '<h2>Create a Ticket</h2>
-            <form method="post">
-                <input type="text" name="subject" placeholder="Subject" required>
-                <textarea name="message" placeholder="Message" required></textarea>
-                <input type="hidden" name="action" value="create_ticket">
-                <button type="submit">Submit</button>
-            </form>';
             
     }// end fn
 
-    public static function load_ticket_list( $user_tickets ) {
+    public static function view_ticket_list() {
         
-        echo '<h2>Your Tickets</h2>';
+        $user_tickets = UserTicketModel::get_tickets_by_user( get_current_user_id() );
+        
+        if( count($user_tickets) ){
+            
+            echo '
+                    <table class="ewst-ticket-list" >
+                        <tr>
+                            <th>ID</th>
+                            <th>User</th>
+                            <th>Subject</th>
+                            <th>Status</th>
+                            <th>View</th>
+                        </tr>
+                    ';
+                    
+            foreach ($user_tickets as $ticket) {
+                echo "
+                    <tr>
+                        <td>{$ticket->id}</td>
+                        <td>{$ticket->wp_user_id}</td>
+                        <td>$ticket->subject</td>
+                        <td>$ticket->status</td>
+                        <td>
+                            <a href='?page=ticket_list&ticket={$ticket->id}'>View</a>
+                        </td>
+                    </tr>";
+            }
+            echo '</table>';
+            
+        } else{
+            
+            echo "No tickets detected";
+            
+        }
+       
+        
         foreach ($user_tickets as $ticket) {
             echo "<p><strong>{$ticket->subject}</strong> ({$ticket->status}) - <a href='?ticket={$ticket->id}'>View</a></p>";
         }
