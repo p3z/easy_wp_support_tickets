@@ -2,6 +2,7 @@
 * Menu
 * 1. Ticket list
 * 2. Create ticket form
+* 3. Ticket response list
 *
 ************************************/
 
@@ -26,42 +27,45 @@
     margin: 30px 0;
 }
 
-.ewst-form-title{
+.ewst-basic-title{
     font-weight: bold;
     margin-bottom: 30px;
 }
 
-
-/***********************************
-* 
-* 1. Ticket list
-*
-***********************************/
-.ewst-ticket-list{
+.ewst-basic-table{
     min-width: 500px;
     width: 80%;
     border-collapse: collapse;
     margin: 30px 0;
 }
 
-.ewst-ticket-list tr:nth-child(even){
+.ewst-basic-table tr:nth-child(even){
     background-color: #f2f2f2;
 }
     
-.ewst-ticket-list td,
-.ewst-ticket-list th {
-  border: 1px solid #ddd;
+.ewst-basic-table td,
+.ewst-basic-table th,
+.ewst-response-header
+{
+  border: 1px solid #000;
   padding: 10px;
 }
     
 
-.ewst-ticket-list th{
+.ewst-basic-table th{
     background-color: var(--ewst-blue);
     color: #fff;
     padding-top: 12px;
     padding-bottom: 12px;
     text-align: left;
 }
+
+/***********************************
+* 
+* 1. Ticket list
+*
+***********************************/
+
 
 
 
@@ -110,5 +114,30 @@
 
 .ewst-submit-btn:hover{
     opacity: 80%;
-    
 }
+
+/***********************************
+* 
+* 3. Ticket response list
+*
+***********************************/
+.ewst-response-list{
+    min-width: 500px;
+    width: 80%;
+    border: 1px solid #000;
+    margin: 30px 0;
+}
+
+.ewst-response-header{
+    background-color: var(--ewst-blue);
+    color: #fff;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.ewst-response-body{
+    padding: 30px;
+}
+

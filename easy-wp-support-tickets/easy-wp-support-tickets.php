@@ -2,11 +2,9 @@
 /**
  * Plugin Name:Easy Wp Support Tickets
  * Description: A simple support ticket system for WordPress.
- * Version: 1.13
+ * Version: 1.16
  * Author: Shay Pottle
  */
-
-
 
 if (!defined('ABSPATH')) exit;
 
@@ -41,20 +39,7 @@ add_action('admin_enqueue_scripts', 'ewst_enqueue_global_styles');
 
 class ModelUtils{
     
-    public static function upsert_data( $table_str, $data ){
-        // $wpdb->insert("{$wpdb->prefix}ewst25_user_tickets", [
-        //             'wp_user_id' => $user_id,
-        //             'subject' => sanitize_text_field($_POST['subject']),
-        //             'status' => 'open'
-        //         ]);
-                
-        //         $ticket_id = $wpdb->insert_id;
-                
-        //         $wpdb->insert("{$wpdb->prefix}ewst25_ticket_responses", [
-        //             'wp_user_id' => $user_id,
-        //             'ticket_id' => $ticket_id,
-        //             'message' => sanitize_textarea_field($_POST['message'])
-        //         ]);
+    public static function upsert_data( $table_str, $data_object ){
         
         global $wpdb;
         
@@ -132,7 +117,31 @@ class UserTicketModel{
         
     }// end fn
     
+    public static function get_ticket_by_id( $ticket_id ){
+        
+        global $wpdb;
+        
+        $this_ticket = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ewst25_user_tickets WHERE id = %d LIMIT 1" , $ticket_id));
+        
+        return $this_ticket;
+        
+    }// end fn
     
+    
+    
+}// end class
+
+class TicketResponseModel{
+    
+    public static function get_responses_by_ticket( $ticket_id ){
+        
+        global $wpdb;
+        
+        $responses = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ewst25_ticket_responses WHERE ticket_id = %d", $ticket_id));
+        
+        return $responses;
+        
+    }// end fn
     
 }// end class
 
@@ -149,6 +158,7 @@ class EwstSetup{
         add_action('admin_menu', ['EwstSetup', 'init_admin_menu']);
         add_shortcode('ewst_create_ticket_form', ['EwstLoadViews', 'create_ticket_form']);
         add_shortcode('ewst_view_ticket_list', ['EwstLoadViews', 'view_ticket_list']);
+        add_shortcode('ewst_view_ticket_responses', ['EwstLoadViews', 'view_ticket_responses']);
         add_action('init', ['EwstSetup', 'handle_form_submission']);
         
     }// end fn
@@ -281,7 +291,7 @@ class EwstAdminViews{
         if( count($tickets) ){
             
             echo '
-                    <table class="ewst-ticket-list" >
+                    <table class="ewst-basic-table" >
                         <tr>
                             <th>ID</th>
                             <th>User</th>
@@ -324,17 +334,19 @@ class EwstLoadViews{
         ob_start();
         
         if (!is_user_logged_in()) {
-            echo '<p>You must be logged in to create or view tickets.</p>';
+            echo '<span class="ewst-alert">You must be logged in to create or view tickets.</span>';
             return ob_get_clean();
         }
         
         $attribution_tag = VALID_EWST_LICENSE ? "" : "<span class='ewst-attribution'>Powered by Easy WP Support Tickets</span>";
         
-        
+        if( $SESSION['success'] ){
+            echo "<span class='ewst-alert'>" . $SESSION['success'] . "</span>";
+        }
         echo "
             <form class='ewst-create-ticket-form' method='post'>
             
-                <span class='ewst-form-title'>Create new ticket</span>
+                <span class='ewst-basic-title'>Create new ticket</span>
             
                 <label for='ewst-ticket-subject'>
                     Ticket subject:
@@ -363,16 +375,18 @@ class EwstLoadViews{
         
         if( count($user_tickets) ){
             
-            echo '
-                    <table class="ewst-ticket-list" >
-                        <tr>
-                            <th>ID</th>
-                            <th>User</th>
-                            <th>Subject</th>
-                            <th>Status</th>
-                            <th>View</th>
-                        </tr>
-                    ';
+            echo "
+                <span class='ewst-basic-title'>Viewing tickets</span>
+                
+                <table class='ewst-basic-table' >
+                    <tr>
+                        <th>ID</th>
+                        <th>User</th>
+                        <th>Subject</th>
+                        <th>Status</th>
+                        <th>View</th>
+                    </tr>
+                ";
                     
             foreach ($user_tickets as $ticket) {
                 echo "
@@ -382,7 +396,7 @@ class EwstLoadViews{
                         <td>$ticket->subject</td>
                         <td>$ticket->status</td>
                         <td>
-                            <a href='?page=ticket_list&ticket={$ticket->id}'>View</a>
+                            <a href='?ticket={$ticket->id}'>View</a>
                         </td>
                     </tr>";
             }
@@ -393,10 +407,56 @@ class EwstLoadViews{
             echo "<span class='ewst-alert'>No tickets detected</span>";
             
         }
-       
         
-        foreach ($user_tickets as $ticket) {
-            echo "<p><strong>{$ticket->subject}</strong> ({$ticket->status}) - <a href='?ticket={$ticket->id}'>View</a></p>";
+    }// end fn
+    
+    public static function view_ticket_responses() {
+        
+        $ticket_id = $_GET['ticket'] ?? NULL;
+        
+        // Dont forget to make sure only the right user can view this ticket
+        if( empty($ticket_id) ){
+            echo "<span class='ewst-alert'>No ticket selected</span>";
+            return;
+        }
+        
+        $this_ticket = UserTicketModel::get_ticket_by_id( $ticket_id );
+        $this_ticket = $this_ticket[0] ?? NULL;
+        $ticket_responses = TicketResponseModel::get_responses_by_ticket( $ticket_id );
+        
+        if( count($ticket_responses) ){
+            
+            echo "
+                <span class='ewst-basic-title'>Viewing ticket $ticket_id</span>
+                <div class='ewst-response-list' >
+                ";
+                    
+            foreach ($ticket_responses as $response) {
+                echo "
+                   <div class='ewst-response-header'>
+                   
+                        <div>
+                            <span>User: $response->wp_user_id</span>
+                        </div>
+                        
+                        <div>
+                            <span>Identity (TODO)</span>
+                            <span>Last updated: $response->created_at</span>
+                        </div>
+                        
+                    </div><!-- ewst-response-list -->
+                    
+                    <div class='ewst-response-body'>
+                        $response->message
+                    </div><!-- ewst-response-body -->
+                ";
+            }
+            echo '</div><!-- ewst-response-list -->';
+            
+        } else{
+            
+            echo "<span class='ewst-alert'>No responses detected</span>";
+            
         }
         
     }// end fn
