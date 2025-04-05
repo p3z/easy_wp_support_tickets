@@ -2,7 +2,7 @@
 /**
  * Plugin Name:Easy Wp Support Tickets
  * Description: A simple support ticket system for WordPress.
- * Version: 1.10
+ * Version: 1.13
  * Author: Shay Pottle
  */
 
@@ -11,6 +11,7 @@
 if (!defined('ABSPATH')) exit;
 
 require_once plugin_dir_path(__FILE__) . 'constants.php';
+require_once plugin_dir_path(__FILE__) . 'utils.php';
 
 
 function ewst_enqueue_global_styles() {
@@ -38,6 +39,76 @@ add_action('admin_enqueue_scripts', 'ewst_enqueue_global_styles');
 // }
 // add_action('admin_enqueue_scripts', 'ewst_enqueue_admin_styles');
 
+class ModelUtils{
+    
+    public static function upsert_data( $table_str, $data ){
+        // $wpdb->insert("{$wpdb->prefix}ewst25_user_tickets", [
+        //             'wp_user_id' => $user_id,
+        //             'subject' => sanitize_text_field($_POST['subject']),
+        //             'status' => 'open'
+        //         ]);
+                
+        //         $ticket_id = $wpdb->insert_id;
+                
+        //         $wpdb->insert("{$wpdb->prefix}ewst25_ticket_responses", [
+        //             'wp_user_id' => $user_id,
+        //             'ticket_id' => $ticket_id,
+        //             'message' => sanitize_textarea_field($_POST['message'])
+        //         ]);
+        
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . $table_str;
+    
+        // Convert object to array if necessary
+        if ( is_object( $data_object ) ) {
+            $data_object = (array) $data_object;
+        }
+    
+        // Ensure we have an array
+        if ( ! is_array( $data_object ) ) {
+            return false;
+        }
+    
+        // Check if ID is present
+        $is_update = isset( $data_object['id'] ) && ! empty( $data_object['id'] );
+    
+        // Separate ID from the data array
+        if ( $is_update ) {
+            $id = $data_object['id'];
+            unset( $data_object['id'] );
+        }
+    
+        // Determine the format types
+        $format = [];
+        foreach ( $data_object as $key => $value ) {
+            if ( is_int( $value ) ) {
+                $format[] = '%d';
+            } elseif ( is_float( $value ) ) {
+                $format[] = '%f';
+            } else {
+                $format[] = '%s'; // Default to string
+            }
+        }
+    
+        if ( $is_update ) {
+            // Update existing record
+            $where = [ 'id' => $id ];
+            $where_format = [ '%d' ];
+            $result = $wpdb->update( $table_name, $data_object, $where, $format, $where_format );
+        } else {
+            // Insert new record
+            $result = $wpdb->insert( $table_name, $data_object, $format );
+        }
+    
+        // Return affected rows or new insert ID
+        return $is_update ? $result : $wpdb->insert_id;
+        
+    }// end fn
+    
+    
+}// end fn
+
 
 class UserTicketModel{
     
@@ -61,6 +132,8 @@ class UserTicketModel{
         
     }// end fn
     
+    
+    
 }// end class
 
 // plugin prefix: ewst25
@@ -70,7 +143,7 @@ class EwstSetup{
     public static function init_plugin(){
         
         register_activation_hook(__FILE__, ['EwstSetup', 'install_db_tables']);
-        //register_deactivation_hook(__FILE__, ['EwstSetup', 'uninstall_db_tables']);
+        register_deactivation_hook(__FILE__, ['EwstSetup', 'uninstall_db_tables']); // Remember to remove this when plugin ready
         register_uninstall_hook(__FILE__, ['EwstSetup', 'uninstall_db_tables']);
         
         add_action('admin_menu', ['EwstSetup', 'init_admin_menu']);
@@ -92,6 +165,7 @@ class EwstSetup{
 
         $user_tickets = $wpdb->prefix . 'ewst25_user_tickets';
         $ticket_responses = $wpdb->prefix . 'ewst25_ticket_responses';
+        $ticket_notes = $wpdb->prefix . 'ewst25_ticket_notes';
     
         $user_tickets_table = "
             CREATE TABLE IF NOT EXISTS $user_tickets (
@@ -112,9 +186,19 @@ class EwstSetup{
                 message TEXT NOT NULL
             ) $charset_collate;
         ";
+        
+        $ticket_notes_table = "
+            CREATE TABLE $ticket_notes (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                user_ticket_id BIGINT UNSIGNED NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                note_content TEXT NOT NULL
+            ) $charset_collate;
+        ";
     
         dbDelta( $user_tickets_table );
         dbDelta( $ticket_responses_table );
+        dbDelta( $ticket_notes_table );
         
     }// end fn
     
@@ -122,9 +206,11 @@ class EwstSetup{
         global $wpdb;
         $table_tickets = $wpdb->prefix . 'ewst25_user_tickets';
         $table_responses = $wpdb->prefix . 'ewst25_ticket_responses';
+        $ticket_notes = $wpdb->prefix . 'ewst25_ticket_notes';
 
         $wpdb->query("DROP TABLE IF EXISTS $table_responses");
         $wpdb->query("DROP TABLE IF EXISTS $table_tickets");
+        $wpdb->query("DROP TABLE IF EXISTS $ticket_notes");
     }// end fn
     
     public static function init_admin_menu() {
@@ -146,23 +232,31 @@ class EwstSetup{
         
         global $wpdb;
         $user_id = get_current_user_id();
+        EwstUtils::init_session();
+        $previous_url = $_SERVER['HTTP_REFERER'] ?? home_url(); 
         
         switch( $_POST['action'] ){
             
             case 'create_ticket':
-                $wpdb->insert("{$wpdb->prefix}ewst25_user_tickets", [
+                
+                $new_ticket = [
                     'wp_user_id' => $user_id,
                     'subject' => sanitize_text_field($_POST['subject']),
-                    'status' => 'open'
-                ]);
+                    'status' => 'open'    
+                ];
                 
-                $ticket_id = $wpdb->insert_id;
-                
-                $wpdb->insert("{$wpdb->prefix}ewst25_ticket_responses", [
+                $new_response = [
                     'wp_user_id' => $user_id,
                     'ticket_id' => $ticket_id,
                     'message' => sanitize_textarea_field($_POST['message'])
-                ]);
+                ];
+                
+                ModelUtils::upsert_data( 'ewst25_user_tickets', $new_ticket );
+                ModelUtils::upsert_data( 'ewst25_ticket_responses', $new_response );
+                
+                $_SESSION['success'] = "Ticket successfully created";
+                wp_redirect( $previous_url );
+                
                 break;
                 
             default:
@@ -213,7 +307,7 @@ class EwstAdminViews{
             
         } else{
             
-            echo "No tickets detected";
+            echo "<span class='ewst-alert'>No tickets detected</span>";
             
         }
 
@@ -224,6 +318,8 @@ class EwstAdminViews{
 class EwstLoadViews{
     
     public static function create_ticket_form() {
+        
+        EwstUtils::init_session();
         
         ob_start();
         
@@ -237,6 +333,8 @@ class EwstLoadViews{
         
         echo "
             <form class='ewst-create-ticket-form' method='post'>
+            
+                <span class='ewst-form-title'>Create new ticket</span>
             
                 <label for='ewst-ticket-subject'>
                     Ticket subject:
@@ -292,7 +390,7 @@ class EwstLoadViews{
             
         } else{
             
-            echo "No tickets detected";
+            echo "<span class='ewst-alert'>No tickets detected</span>";
             
         }
        

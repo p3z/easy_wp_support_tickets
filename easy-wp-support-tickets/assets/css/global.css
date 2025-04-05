@@ -16,6 +16,21 @@
     padding: 15px;
 }
 
+.ewst-alert{
+    background: #fff;
+    padding: 30px;
+    border: 1px solid #000;
+    min-width: 500px;
+    width: 80%;
+    display: block;
+    margin: 30px 0;
+}
+
+.ewst-form-title{
+    font-weight: bold;
+    margin-bottom: 30px;
+}
+
 
 /***********************************
 * 
@@ -26,6 +41,7 @@
     min-width: 500px;
     width: 80%;
     border-collapse: collapse;
+    margin: 30px 0;
 }
 
 .ewst-ticket-list tr:nth-child(even){
@@ -58,7 +74,7 @@
     /*background: rgba(51, 36, 121, 0.5);*/
     border: 1px solid #000;
     padding: 30px;
-    margin-bottom: 25px;
+    margin: 30px 0;
     width: 100%;
     min-width: 500px;
     display: flex;
@@ -77,6 +93,10 @@
 .ewst-text-input,
 .ewst-textarea{
     padding: 15px;
+}
+
+.ewst-textarea{
+    min-height: 150px;    
 }
 
 .ewst-submit-btn{
